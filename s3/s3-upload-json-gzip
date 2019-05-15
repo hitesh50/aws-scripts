@@ -1,0 +1,36 @@
+#! /usr/bin/env node
+
+const zlib = require('zlib')
+const util = require('util')
+const AWS = require('aws-sdk')
+
+const s3 = new AWS.S3()
+const gzip = util.promisify(zlib.gzip)
+
+const SOME_DATA = { text: 'hello' }
+
+async function main() {
+  try {
+    const data = JSON.stringify(SOME_DATA)
+    const buffer = new Buffer.from(data)
+    const compressed = await gzip(buffer)
+
+    const params = {
+      Body: compressed,
+      Bucket: 'my-bucket-here',
+      Key: 'my-data.json.gz',
+      ContentType: 'application/json',
+      ContentEncoding: 'gzip'
+    }
+
+    await s3.putObject(params).promise()
+
+    console.log('[SUCCESS]', 'Data uploaded!')
+    process.exit()
+  } catch (err) {
+    console.log('[ERROR]', err)
+    process.exit(1)
+  }
+}
+
+main()

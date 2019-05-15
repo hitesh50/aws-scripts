@@ -1,0 +1,73 @@
+#! /usr/bin/env node
+
+const aws = require('aws-sdk')
+
+const TABLE_NAME = process.argv[2]
+
+if (!TABLE_NAME) {
+  console.log('usage: ./dynamo-delete-items <table>')
+  process.exit(1)
+}
+
+const DYNAMO_BATCH_LIMIT = 25
+
+const dynamodbClient = new aws.DynamoDB.DocumentClient({ region: 'us-east-1' })
+
+const batchWrite = params => dynamodbClient.batchWrite(params).promise()
+
+const mapDeleteRequest = items =>
+  items.map(item => ({
+    DeleteRequest: {
+      Key: {
+        id: item.id
+      }
+    }
+  }))
+
+const batchWriteChunks = async items => {
+  const chunks = chunk(DYNAMO_BATCH_LIMIT, items)
+
+  for (let i = 0; i < chunks.length; i++) {
+    await batchWrite({
+      RequestItems: {
+        [TABLE_NAME]: mapDeleteRequest(chunks[i])
+      }
+    })
+  }
+}
+
+const chunk = (size, arr) => {
+  const data = []
+  for (let i = 0; i < arr.length; i += size) {
+    data.push(arr.slice(i, size + i))
+  }
+  return data
+}
+
+const getAllItems = async (params = {}) => {
+  const scanResults = []
+  let items
+
+  do {
+    items = await dynamodbClient.scan({ TableName: TABLE_NAME }).promise()
+    items.Items.forEach(item => scanResults.push(item))
+    params.ExclusiveStartKey = items.LastEvaluatedKey
+  } while (typeof items.LastEvaluatedKey != 'undefined')
+
+  return scanResults
+}
+
+function main() {
+  getAllItems()
+    .then(batchWriteChunks)
+    .then(() => {
+      console.log('[SUCCESS]', `All items deleted in ${TABLE_NAME}`)
+      process.exit()
+    })
+    .catch(err => {
+      console.log('[ERROR]', err)
+      process.exit(1)
+    })
+}
+
+main()
