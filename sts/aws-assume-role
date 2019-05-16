@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+__json_get_value(){
+  local str="${1}"
+  local key="${2}"
+
+  echo "${str}" \
+    | grep "\"${key}\"" \
+    | awk -F':' '{print $2}' \
+    | awk -F'"' '{print $2}'
+}
+
+__aws-get_arn() {
+  profile=$1
+  arn=$(awk -v RS='' '/'"$profile"'/' ~/.aws/credentials)
+  profile_name=$(echo "$arn" | grep -E "\\[.*\\]" | head -n 1)
+
+  if [[ $profile_name == "[$profile]" ]]; then
+    arn=$(echo "$arn" | grep "role_arn" | awk -F " = " '{print $2}' | head -n 1)
+    echo "$arn"
+  fi
+}
+
+aws-assume-role(){
+  role=$(__aws-get_arn "$1")
+
+  if [[ -n "$role" ]]; then
+    unset AWS_SESSION_TOKEN
+    unset AWS_ACCESS_KEY_ID
+    unset AWS_SECRET_ACCESS_KEY
+
+    tempRole="$(aws sts assume-role --role-arn "$role" --role-session-name AWSCLI-Session)"
+
+    awsAccessKey="$(__json_get_value "$tempRole" "AccessKeyId")"
+    awsSecretAccessKey="$(__json_get_value "$tempRole" "SecretAccessKey")"
+    awsSessionToken="$(__json_get_value "$tempRole" "SessionToken")"
+
+    export AWS_ACCESS_KEY_ID=$awsAccessKey
+    export AWS_SECRET_ACCESS_KEY=$awsSessionToken
+    export AWS_SESSION_TOKEN=$awsSecretAccessKey
+
+    echo "Now using role: $role"
+  fi
+}
+
+aws-assume-role "$@"
